@@ -1,4 +1,4 @@
-odoo.define('wz_notif_so.SoNotification', function (require) {
+odoo.define('wz_notif_so_ms.SoNotification', function (require) {
 	'use strict';
 
 	var rpc = require('web.rpc');

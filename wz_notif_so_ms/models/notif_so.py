@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api, _
+import datetime
+import pytz
 import logging
 
 _logger = logging.getLogger(__name__)
 
-class NotifSales(models.Model):
+class NotifSalesMs(models.Model):
 	_inherit = 'sale.order'
 
 	manager_approved = fields.Boolean(string='Manager Approved', default=False)
@@ -24,8 +26,8 @@ class NotifSales(models.Model):
 
 	@api.model
 	def get_pending_manager_approval_count(self):
-		"""Query ringan untuk menghitung SO hari ini dan mengambil setting interval dari ir.config_parameter"""
-		if not self.env.user.has_group('wz_notif_so.group_sale_manager_notif'):
+		"""Query ringan untuk menghitung SO dari 2 hari lalu s.d hari ini dengan DO belum done"""
+		if not self.env.user.has_group('wz_notif_so_ms.group_sale_manager_notif'):
 			return {'count': 0, 'interval': 0}
 
 		# Mengambil nilai interval dari ir.config_parameter
@@ -37,74 +39,66 @@ class NotifSales(models.Model):
 
 		interval_ms = int(param_interval) * 1000  # Konversi detik ke milidetik untuk JS
 
-		current_date = fields.Date.context_today(self)
+		user_tz = pytz.timezone('Asia/Jakarta')
+		now_local = datetime.datetime.now(user_tz)
+		
+		start_local_dt = (now_local - datetime.timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+		end_local_dt = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
+		
+		start_utc_dt = start_local_dt.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
+		end_utc_dt = end_local_dt.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
 		
 		query = """
-			SELECT count(id) 
-			FROM sale_order 
-			WHERE state = 'sale' 
-			  AND (manager_approved = FALSE OR manager_approved IS NULL)
-			  AND date_order::date = %s
+			SELECT count(so.id) 
+			FROM sale_order so
+			WHERE so.state = 'sale' 
+			  AND (so.manager_approved = FALSE OR so.manager_approved IS NULL)
+			  AND so.date_order >= %s
+			  AND so.date_order <= %s
+			  AND EXISTS (
+				  SELECT 1 FROM stock_picking sp 
+				  WHERE sp.sale_id = so.id 
+				    AND sp.state != 'done'
+			  )
 		"""
-		self.env.cr.execute(query, (current_date,))
+		self.env.cr.execute(query, (start_utc_dt, end_utc_dt))
 		res = self.env.cr.fetchone()
 		count = res[0] if res else 0
 
 		return {'count': count, 'interval': interval_ms}
 
-	# @api.model
-	# def get_pending_manager_approval_action_id(self):
-	# 	"""Membuat ir.actions.act_window secara dinamis agar domain filter hari ini & approval terbawa sempurna"""
-	# 	current_date = fields.Date.context_today(self)
-		
-	# 	start_datetime = f"{current_date} 00:00:00"
-	# 	end_datetime = f"{current_date} 23:59:59"
-
-	# 	domain_list = [
-	# 		('state', '=', 'sale'),
-	# 		('manager_approved', '=', False),
-	# 		('date_order', '>=', start_datetime),
-	# 		('date_order', '<=', end_datetime)
-	# 	]
-
-	# 	action_vals = {
-	# 		'name': f'Pending Manager Approval SO ({current_date})',
-	# 		'res_model': 'sale.order',
-	# 		'view_mode': 'tree,form',
-	# 		'views': [(False, 'list'), (False, 'form')],
-	# 		'domain': str(domain_list),
-	# 		'target': 'current',
-	# 	}
-		
-	# 	# Membuat record action window baru di database secara dinamis
-	# 	action = self.env['ir.actions.act_window'].sudo().create(action_vals)
-	# 	return action.id
-
 	@api.model
 	def get_pending_manager_approval_action_id(self):
-		"""Membuat ir.actions.act_window secara dinamis dan membersihkan action lama dari hari kemarin"""
-		current_date = fields.Date.context_today(self)
+		"""Membuat ir.actions.act_window secara dinamis dengan rentang 2 hari lalu s.d hari ini & DO belum done"""
+		user_tz = pytz.timezone('Asia/Jakarta')
+		now_local = datetime.datetime.now(user_tz)
 		
-		# 1. Bersihkan record ir.actions.act_window pending approval yang bukan tanggal hari ini agar database tidak menumpuk
+		start_local_dt = (now_local - datetime.timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+		end_local_dt = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
+		
+		start_utc_dt = start_local_dt.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
+		end_utc_dt = end_local_dt.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+		current_date_str = now_local.strftime('%d-%m-%Y')
+
+		# Bersihkan record ir.actions.act_window pending approval yang lama agar database tidak menumpuk
 		old_actions = self.env['ir.actions.act_window'].sudo().search([
 			('name', 'like', 'Pending Manager Approval SO%'),
-			('name', 'not like', f'Pending Manager Approval SO ({current_date})%')
+			('name', 'not like', f'Pending Manager Approval SO ({current_date_str})%')
 		])
 		if old_actions:
 			old_actions.unlink()
 
-		start_datetime = f"{current_date} 00:00:00"
-		end_datetime = f"{current_date} 23:59:59"
-
 		domain_list = [
 			('state', '=', 'sale'),
 			('manager_approved', '=', False),
-			('date_order', '>=', start_datetime),
-			('date_order', '<=', end_datetime)
+			('date_order', '>=', start_utc_dt),
+			('date_order', '<=', end_utc_dt),
+			('picking_ids.state', '!=', 'done')
 		]
 
 		action_vals = {
-			'name': f'Pending Manager Approval SO ({current_date})',
+			'name': f'Pending Manager Approval SO ({current_date_str})',
 			'res_model': 'sale.order',
 			'view_mode': 'tree,form',
 			'views': [(False, 'list'), (False, 'form')],
@@ -112,6 +106,6 @@ class NotifSales(models.Model):
 			'target': 'current',
 		}
 		
-		# Membuat record action window baru di database secara dinamis untuk hari ini
+		# Membuat record action window baru di database secara dinamis
 		action = self.env['ir.actions.act_window'].sudo().create(action_vals)
 		return action.id

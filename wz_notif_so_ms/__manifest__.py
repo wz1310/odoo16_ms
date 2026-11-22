@@ -10,8 +10,8 @@
     ],
     'assets': {
         'web.assets_backend': [
-            'wz_notif_so/static/src/js/so_notification.js',
-            'wz_notif_so/static/src/xml/so_notification_template.xml',
+            'wz_notif_so_ms/static/src/js/so_notification.js',
+            'wz_notif_so_ms/static/src/xml/so_notification_template.xml',
         ],
     },
     'installable': True,

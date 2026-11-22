@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': "wz_api",
+    'name': "wz_api_ms",
 
     'summary': """API for ODOO """,
 
