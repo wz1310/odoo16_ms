@@ -1,0 +1,21 @@
+{
+    'name': 'Inherit COA ',
+    'summary': """Inherit COA """,
+    'version': '0.0.1',
+    'author': 'Wiza',
+    'description': """Inherit COA """,
+    'depends': ['account','sale','stock','wz_multi_upload_img','wu_wz_mo_matrix','bi_all_in_one_stock_backdate'],
+    'data': [
+        'security/ir.model.access.csv',
+        'wizard/financial_report_wizard_view.xml',
+        # 'views/inher_picking.xml',
+        'views/inher_view_so.xml',
+        'views/mrp_worker_views.xml',
+        'views/coa_view.xml',
+        'views/batch_view.xml',
+        'views/finished_goods_result_views.xml',
+    ],
+    'installable': True,
+    'auto_install': False,
+    'application': True
+}
